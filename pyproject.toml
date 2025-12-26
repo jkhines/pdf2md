@@ -1,0 +1,33 @@
+[project]
+name = "pdf2md"
+version = "0.1.0"
+description = "Convert PDF documents to Markdown format, preserving formatting, images, and hyperlinks"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pymupdf>=1.24.0",
+    "pillow>=10.0.0",
+]
+
+[project.scripts]
+pdf2md = "pdf2md.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--verbose",
+    "--strict-markers",
+]
