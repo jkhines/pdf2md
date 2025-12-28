@@ -9,6 +9,13 @@ if [ -z "$STAGED_DIFF" ]; then
     exit 0
 fi
 
+# Check if cursor-agent is available
+if ! command -v cursor-agent &> /dev/null; then
+    echo "PII scan skipped: cursor-agent not found in PATH."
+    echo "Install cursor-agent to enable PII detection, or remove this hook."
+    exit 0
+fi
+
 echo "Scanning staged changes for PII..."
 
 RESULT=$(cursor-agent --print --output-format text --workspace "$(git rev-parse --show-toplevel)" \
