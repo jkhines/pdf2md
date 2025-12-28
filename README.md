@@ -1,10 +1,21 @@
 # pdf2md
 
-A Python tool to convert Adobe PDF documents into Markdown format, preserving formatting, images, and hyperlinks.
+A fast, lightweight Python tool to convert text-based PDF documents into Markdown format, preserving formatting, images, and hyperlinks.
+
+> **Note**: This tool is designed for PDFs with embedded text (e.g., documents created from Word, LaTeX, or other text-based sources). It does **not** include OCR and cannot extract text from scanned documents or image-based PDFs. For scanned PDFs, consider an OCR-based solution.
+
+## Why pdf2md?
+
+- **Fast**: Direct text extraction via PyMuPDF, no ML inference required
+- **Lightweight**: Only two dependencies (PyMuPDF + Pillow), installs in seconds
+- **No API keys**: Runs entirely offline with no external services
+- **No GPU required**: Works on any machine without special hardware
+- **Predictable output**: Deterministic conversion without AI variability
 
 ## Features
 
 - **Text Extraction**: Extracts text content while maintaining document structure
+- **Table Detection**: Extracts tables and converts them to Markdown table format
 - **Heading Detection**: Automatically detects headings based on font size ratios
 - **Bold/Italic Detection**: Preserves bold and italic formatting from PDF fonts
 - **Hyperlink Preservation**: Extracts and converts hyperlinks to Markdown format
@@ -111,6 +122,7 @@ with open("document.pdf", "rb") as f:
 | `detect_headings` | `bool` | `True` | Detect headings by font size |
 | `detect_lists` | `bool` | `True` | Detect numbered/bulleted lists |
 | `detect_bold_italic` | `bool` | `True` | Detect bold/italic text |
+| `detect_tables` | `bool` | `True` | Detect and extract tables |
 | `heading_font_size_threshold` | `float` | `14.0` | Minimum font size for headings |
 | `min_heading_size_ratio` | `float` | `1.2` | Minimum font size ratio vs base |
 | `line_merge_threshold` | `float` | `5.0` | Max vertical gap to merge lines |
@@ -157,11 +169,19 @@ pdf2md/
 
 ## Limitations
 
-- Complex table structures may not be perfectly preserved
+- **Text-based PDFs only**: Scanned documents and image-based PDFs are not supported (no OCR)
+- **Table detection**: Works best with line-bordered tables; borderless tables may not be detected
+- Complex merged cells in tables may not render correctly
 - Some advanced PDF features (forms, annotations) are not extracted
-- Text in images/scanned PDFs requires OCR (not included)
 - Right-to-left text may not render correctly
 - Very long lines split across the PDF may occasionally fragment
+
+## When to Use Something Else
+
+If your PDFs are scanned documents or contain text as images, you need an OCR-based solution. Consider:
+- [pdf2md-converter](https://pypi.org/project/pdf2md-converter/) (TrOCR, EasyOCR, Tesseract)
+- [marker-pdf](https://pypi.org/project/marker-pdf/) (ML-based with table support)
+- [gptparse](https://pypi.org/project/gptparse/) (Vision language models)
 
 ## License
 

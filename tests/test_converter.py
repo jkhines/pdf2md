@@ -13,6 +13,7 @@ from pdf2md.converter import (
     Link,
     PageContent,
     PDFConverter,
+    TableInfo,
     TextBlock,
 )
 from tests.conftest import FIXTURES_DIR
@@ -1529,4 +1530,346 @@ class TestFormattingPreservationIntegration:
 
         # Should have 1, 2, 3, 4 (no gaps).
         assert found_items == [1, 2, 3, 4], f"Found items: {found_items}"
+
+
+class TestTableInfo:
+    """Tests for TableInfo dataclass."""
+
+    def test_table_info_creation(self):
+        """Verify TableInfo can be created with all fields."""
+        table = TableInfo(
+            data=[["Header1", "Header2"], ["Row1Col1", "Row1Col2"]],
+            bbox=(10, 20, 300, 100),
+            page_num=0,
+            row_count=2,
+            col_count=2,
+        )
+
+        assert table.data == [["Header1", "Header2"], ["Row1Col1", "Row1Col2"]]
+        assert table.bbox == (10, 20, 300, 100)
+        assert table.page_num == 0
+        assert table.row_count == 2
+        assert table.col_count == 2
+
+    def test_table_info_default_values(self):
+        """Verify TableInfo has correct default values."""
+        table = TableInfo(
+            data=[["A", "B"]],
+            bbox=(0, 0, 100, 50),
+            page_num=0,
+        )
+
+        assert table.row_count == 0
+        assert table.col_count == 0
+
+
+class TestTableExtraction:
+    """Tests for table extraction functionality."""
+
+    def test_detect_tables_option_default(self):
+        """Verify detect_tables option defaults to True."""
+        options = ConversionOptions()
+        assert options.detect_tables is True
+
+    def test_detect_tables_option_disabled(self):
+        """Verify detect_tables can be disabled."""
+        options = ConversionOptions(detect_tables=False)
+        assert options.detect_tables is False
+
+    def test_table_to_markdown_simple(self):
+        """Verify simple table converts to markdown correctly."""
+        converter = PDFConverter()
+        table = TableInfo(
+            data=[["Name", "Age"], ["Alice", "30"], ["Bob", "25"]],
+            bbox=(0, 0, 100, 100),
+            page_num=0,
+            row_count=3,
+            col_count=2,
+        )
+
+        result = converter._table_to_markdown(table)
+
+        assert "| Name | Age |" in result
+        assert "| --- | --- |" in result
+        assert "| Alice | 30 |" in result
+        assert "| Bob | 25 |" in result
+
+    def test_table_to_markdown_empty(self):
+        """Verify empty table returns empty string."""
+        converter = PDFConverter()
+        table = TableInfo(
+            data=[],
+            bbox=(0, 0, 100, 100),
+            page_num=0,
+        )
+
+        result = converter._table_to_markdown(table)
+
+        assert result == ""
+
+    def test_table_to_markdown_single_row(self):
+        """Verify single row table (header only) works."""
+        converter = PDFConverter()
+        table = TableInfo(
+            data=[["Col1", "Col2", "Col3"]],
+            bbox=(0, 0, 100, 100),
+            page_num=0,
+            row_count=1,
+            col_count=3,
+        )
+
+        result = converter._table_to_markdown(table)
+
+        assert "| Col1 | Col2 | Col3 |" in result
+        assert "| --- | --- | --- |" in result
+
+    def test_table_to_markdown_escapes_pipes(self):
+        """Verify pipe characters in cells are escaped."""
+        converter = PDFConverter()
+        table = TableInfo(
+            data=[["Header"], ["Value | with pipe"]],
+            bbox=(0, 0, 100, 100),
+            page_num=0,
+        )
+
+        result = converter._table_to_markdown(table)
+
+        assert r"Value \| with pipe" in result
+
+    def test_table_to_markdown_handles_newlines(self):
+        """Verify newlines in cells are converted to spaces."""
+        converter = PDFConverter()
+        table = TableInfo(
+            data=[["Header"], ["Line1\nLine2"]],
+            bbox=(0, 0, 100, 100),
+            page_num=0,
+        )
+
+        result = converter._table_to_markdown(table)
+
+        assert "Line1 Line2" in result
+        assert "\n" not in result.split("\n")[2]
+
+    def test_table_to_markdown_handles_empty_cells(self):
+        """Verify empty cells are handled correctly."""
+        converter = PDFConverter()
+        table = TableInfo(
+            data=[["A", "B"], ["", "Value"]],
+            bbox=(0, 0, 100, 100),
+            page_num=0,
+        )
+
+        result = converter._table_to_markdown(table)
+
+        assert "|  | Value |" in result
+
+    def test_table_to_markdown_pads_short_rows(self):
+        """Verify rows with fewer columns than header are padded."""
+        converter = PDFConverter()
+        table = TableInfo(
+            data=[["A", "B", "C"], ["Only", "Two"]],
+            bbox=(0, 0, 100, 100),
+            page_num=0,
+        )
+
+        result = converter._table_to_markdown(table)
+
+        lines = result.split("\n")
+        # Data row should have 3 pipe-separated sections.
+        assert lines[2].count("|") == 4
+
+    def test_escape_table_cell_none_handling(self):
+        """Verify None cells are converted to empty strings."""
+        converter = PDFConverter()
+
+        result = converter._escape_table_cell("")
+        assert result == ""
+
+        result = converter._escape_table_cell(None)
+        assert result == ""
+
+    def test_escape_table_cell_normalizes_whitespace(self):
+        """Verify multiple spaces are normalized."""
+        converter = PDFConverter()
+
+        result = converter._escape_table_cell("Too   many    spaces")
+        assert result == "Too many spaces"
+
+    def test_is_inside_table_center_point(self):
+        """Verify text block detection uses center point."""
+        converter = PDFConverter()
+        tables = [
+            TableInfo(
+                data=[["A"]],
+                bbox=(100, 100, 300, 200),
+                page_num=0,
+            )
+        ]
+
+        # Text block with center inside table.
+        inside_bbox = (150, 140, 250, 160)
+        assert converter._is_inside_table(inside_bbox, tables) is True
+
+        # Text block with center outside table.
+        outside_bbox = (0, 0, 50, 20)
+        assert converter._is_inside_table(outside_bbox, tables) is False
+
+    def test_is_inside_table_partial_overlap(self):
+        """Verify partially overlapping text uses center point."""
+        converter = PDFConverter()
+        tables = [
+            TableInfo(
+                data=[["A"]],
+                bbox=(100, 100, 300, 200),
+                page_num=0,
+            )
+        ]
+
+        # Text block partially overlapping but center outside.
+        partial_bbox = (50, 140, 110, 160)  # Center at (80, 150).
+        assert converter._is_inside_table(partial_bbox, tables) is False
+
+        # Text block partially overlapping but center inside.
+        partial_inside_bbox = (90, 140, 150, 160)  # Center at (120, 150).
+        assert converter._is_inside_table(partial_inside_bbox, tables) is True
+
+    def test_is_inside_table_no_tables(self):
+        """Verify empty table list returns False."""
+        converter = PDFConverter()
+
+        result = converter._is_inside_table((0, 0, 100, 50), [])
+        assert result is False
+
+    def test_page_content_includes_tables(self):
+        """Verify PageContent has tables field."""
+        content = PageContent(page_num=0)
+
+        assert hasattr(content, "tables")
+        assert content.tables == []
+
+    def test_page_content_with_tables(self):
+        """Verify PageContent can store tables."""
+        table = TableInfo(
+            data=[["A", "B"]],
+            bbox=(0, 0, 100, 50),
+            page_num=0,
+        )
+        content = PageContent(page_num=0, tables=[table])
+
+        assert len(content.tables) == 1
+        assert content.tables[0].data == [["A", "B"]]
+
+
+class TestTableExtractionIntegration:
+    """Integration tests for table extraction with PDF files."""
+
+    def test_extract_tables_with_mock_page(self):
+        """Verify _extract_tables handles PyMuPDF table finder."""
+        converter = PDFConverter()
+
+        # Create mock table object.
+        mock_table = MagicMock()
+        mock_table.extract.return_value = [["H1", "H2"], ["V1", "V2"]]
+        mock_table.bbox = (10, 20, 200, 100)
+        mock_table.row_count = 2
+        mock_table.col_count = 2
+
+        # Create mock table finder.
+        mock_finder = MagicMock()
+        mock_finder.tables = [mock_table]
+
+        # Create mock page.
+        mock_page = MagicMock()
+        mock_page.find_tables.return_value = mock_finder
+
+        result = converter._extract_tables(mock_page, 0)
+
+        assert len(result) == 1
+        assert result[0].data == [["H1", "H2"], ["V1", "V2"]]
+        assert result[0].bbox == (10, 20, 200, 100)
+        assert result[0].row_count == 2
+        assert result[0].col_count == 2
+
+    def test_extract_tables_handles_none_cells(self):
+        """Verify None cells are converted to empty strings."""
+        converter = PDFConverter()
+
+        mock_table = MagicMock()
+        mock_table.extract.return_value = [["H1", None], [None, "V2"]]
+        mock_table.bbox = (0, 0, 100, 50)
+        mock_table.row_count = 2
+        mock_table.col_count = 2
+
+        mock_finder = MagicMock()
+        mock_finder.tables = [mock_table]
+
+        mock_page = MagicMock()
+        mock_page.find_tables.return_value = mock_finder
+
+        result = converter._extract_tables(mock_page, 0)
+
+        assert result[0].data == [["H1", ""], ["", "V2"]]
+
+    def test_extract_tables_handles_exception(self):
+        """Verify table extraction gracefully handles errors."""
+        converter = PDFConverter()
+
+        mock_page = MagicMock()
+        mock_page.find_tables.side_effect = Exception("Table extraction failed")
+
+        result = converter._extract_tables(mock_page, 0)
+
+        assert result == []
+
+    def test_extract_tables_skips_empty_tables(self):
+        """Verify empty tables are not included."""
+        converter = PDFConverter()
+
+        mock_table = MagicMock()
+        mock_table.extract.return_value = []
+        mock_table.bbox = (0, 0, 100, 50)
+
+        mock_finder = MagicMock()
+        mock_finder.tables = [mock_table]
+
+        mock_page = MagicMock()
+        mock_page.find_tables.return_value = mock_finder
+
+        result = converter._extract_tables(mock_page, 0)
+
+        assert result == []
+
+    def test_tables_disabled_skips_extraction(self):
+        """Verify table extraction is skipped when disabled."""
+        options = ConversionOptions(detect_tables=False)
+        converter = PDFConverter(options)
+
+        # Create a mock PDF with text only.
+        mock_text_dict = {
+            "blocks": [
+                {
+                    "type": 0,
+                    "lines": [
+                        {
+                            "spans": [{"text": "Test text", "size": 12, "font": "Arial", "flags": 0}],
+                            "bbox": (0, 0, 100, 20),
+                        }
+                    ],
+                }
+            ]
+        }
+
+        with patch.object(converter, "_doc") as mock_doc:
+            mock_page = MagicMock()
+            mock_page.get_text.return_value = mock_text_dict
+            mock_page.get_links.return_value = []
+            mock_page.get_images.return_value = []
+            mock_page.find_tables = MagicMock()
+            mock_doc.__getitem__ = MagicMock(return_value=mock_page)
+
+            content = converter._extract_page_content(0, "test")
+
+            # find_tables should not be called.
+            mock_page.find_tables.assert_not_called()
+            assert content.tables == []
 

@@ -21,6 +21,7 @@ class ConversionOptions:
     detect_headings: bool = True
     detect_lists: bool = True
     detect_bold_italic: bool = True
+    detect_tables: bool = True
     heading_font_size_threshold: float = 14.0
     page_separator: str = "\n\n---\n\n"
     min_heading_size_ratio: float = 1.2
@@ -65,6 +66,17 @@ class ImageInfo:
 
 
 @dataclass
+class TableInfo:
+    """Represents an extracted table."""
+
+    data: list[list[str]]
+    bbox: tuple[float, float, float, float]
+    page_num: int
+    row_count: int = 0
+    col_count: int = 0
+
+
+@dataclass
 class PageContent:
     """Holds all extracted content from a single page."""
 
@@ -72,6 +84,7 @@ class PageContent:
     text_blocks: list[TextBlock] = field(default_factory=list)
     links: list[Link] = field(default_factory=list)
     images: list[ImageInfo] = field(default_factory=list)
+    tables: list[TableInfo] = field(default_factory=list)
     base_font_size: float = 12.0
 
 
@@ -193,6 +206,10 @@ class PDFConverter:
         # Extract images.
         if self.options.extract_images:
             content.images = self._extract_images(page, page_num, source_name)
+
+        # Extract tables.
+        if self.options.detect_tables:
+            content.tables = self._extract_tables(page, page_num)
 
         return content
 
@@ -843,6 +860,93 @@ class PDFConverter:
                     pass
         return (0, 0, 0, 0)
 
+    def _extract_tables(self, page: fitz.Page, page_num: int) -> list[TableInfo]:
+        """Extract tables from a page using PyMuPDF's find_tables().
+
+        Args:
+            page: PyMuPDF page object.
+            page_num: Page number for reference.
+
+        Returns:
+            List of TableInfo objects.
+        """
+        tables = []
+        try:
+            table_finder = page.find_tables()
+            for table in table_finder.tables:
+                data = table.extract()
+                if data and len(data) > 0:
+                    # Clean up cell data: replace None with empty string.
+                    cleaned_data = []
+                    for row in data:
+                        cleaned_row = [cell if cell is not None else "" for cell in row]
+                        cleaned_data.append(cleaned_row)
+
+                    tables.append(
+                        TableInfo(
+                            data=cleaned_data,
+                            bbox=table.bbox,
+                            page_num=page_num,
+                            row_count=table.row_count,
+                            col_count=table.col_count,
+                        )
+                    )
+        except Exception:
+            # Table extraction failed; continue without tables.
+            pass
+
+        return tables
+
+    def _table_to_markdown(self, table: TableInfo) -> str:
+        """Convert a TableInfo object to Markdown table format.
+
+        Args:
+            table: TableInfo object with table data.
+
+        Returns:
+            Markdown formatted table string.
+        """
+        if not table.data or len(table.data) == 0:
+            return ""
+
+        lines = []
+
+        # Header row.
+        header = table.data[0]
+        header_cells = [self._escape_table_cell(cell) for cell in header]
+        lines.append("| " + " | ".join(header_cells) + " |")
+
+        # Separator row.
+        lines.append("| " + " | ".join("---" for _ in header) + " |")
+
+        # Data rows.
+        for row in table.data[1:]:
+            row_cells = [self._escape_table_cell(cell) for cell in row]
+            # Pad row if it has fewer columns than header.
+            while len(row_cells) < len(header):
+                row_cells.append("")
+            lines.append("| " + " | ".join(row_cells) + " |")
+
+        return "\n".join(lines)
+
+    def _escape_table_cell(self, cell: str) -> str:
+        """Escape special characters in table cell content.
+
+        Args:
+            cell: Cell content string.
+
+        Returns:
+            Escaped cell content safe for Markdown tables.
+        """
+        if not cell:
+            return ""
+        # Replace pipe characters and newlines.
+        cell = cell.replace("|", "\\|")
+        cell = cell.replace("\n", " ")
+        # Normalize whitespace.
+        cell = " ".join(cell.split())
+        return cell
+
     def _render_page_markdown(self, content: PageContent) -> str:
         """Render extracted page content as Markdown.
 
@@ -860,8 +964,10 @@ class PDFConverter:
         # Collect all elements with their vertical positions for ordering.
         elements: list[tuple[float, str]] = []
 
-        # Process text blocks.
+        # Process text blocks, but skip those inside table bounding boxes.
         for block in content.text_blocks:
+            if self._is_inside_table(block.bbox, content.tables):
+                continue
             y_pos = block.bbox[1]
             md_text = self._format_text_block(block, content.base_font_size, link_map)
             if md_text.strip():
@@ -877,12 +983,42 @@ class PDFConverter:
                 md_img = f"![Image {img.filename}]()"
             elements.append((y_pos, md_img))
 
+        # Process tables.
+        for table in content.tables:
+            y_pos = table.bbox[1]
+            md_table = self._table_to_markdown(table)
+            if md_table.strip():
+                elements.append((y_pos, md_table))
+
         # Sort by vertical position.
         elements.sort(key=lambda x: x[0])
 
         # Combine into markdown.
         lines = [el[1] for el in elements]
         return self._post_process_markdown("\n\n".join(lines))
+
+    def _is_inside_table(self, text_bbox: tuple, tables: list[TableInfo]) -> bool:
+        """Check if a text block is inside any table bounding box.
+
+        Args:
+            text_bbox: Bounding box of the text block.
+            tables: List of TableInfo objects.
+
+        Returns:
+            True if the text block is inside a table.
+        """
+        for table in tables:
+            table_bbox = table.bbox
+            # Check if text block is substantially inside the table bbox.
+            # Use center point of text block for more accurate detection.
+            text_center_x = (text_bbox[0] + text_bbox[2]) / 2
+            text_center_y = (text_bbox[1] + text_bbox[3]) / 2
+
+            if (table_bbox[0] <= text_center_x <= table_bbox[2] and
+                    table_bbox[1] <= text_center_y <= table_bbox[3]):
+                return True
+
+        return False
 
     def _format_text_block(self, block: TextBlock, base_font_size: float, link_map: dict) -> str:
         """Format a text block as Markdown.
