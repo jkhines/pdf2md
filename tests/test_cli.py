@@ -1,14 +1,11 @@
 """Tests for the CLI interface."""
 
-import sys
 import tempfile
-from io import StringIO
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pdf2md import ConversionOptions, PDFConverter
+from pdf2md import PDFConverter
 from pdf2md.cli import create_options, main, parse_args, process_single_file
 from tests.conftest import FIXTURES_DIR
 

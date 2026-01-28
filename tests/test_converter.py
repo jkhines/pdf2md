@@ -870,7 +870,6 @@ class TestTextBlockMergingIntegration:
 
         # Split into lines and check for isolated numbers.
         lines = markdown.split("\n")
-        import re
         for i, line in enumerate(lines):
             stripped = line.strip()
             # A line should not be just a number marker like "1." or "2)".
@@ -905,7 +904,6 @@ class TestTextBlockMergingIntegration:
 
         # Find all lines starting with a number and verify they have content.
         lines = markdown.split("\n")
-        import re
         for i, line in enumerate(lines):
             match = re.match(r"^(\d+)\.\s*(.*)$", line.strip())
             if match:
@@ -1024,7 +1022,6 @@ class TestTextBlockMergingIntegration:
         markdown = converter.convert_file(sample_pdf)
 
         lines = markdown.split("\n")
-        import re
 
         # Look for patterns that suggest incomplete merging:
         # - A short bullet followed by continuation text on the next line.

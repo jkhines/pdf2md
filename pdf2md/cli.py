@@ -192,16 +192,7 @@ def main(args: list[str] | None = None) -> int:
     error_count = 0
 
     # Determine output mode.
-    if output and output.suffix == "" and len(input_files) > 1:
-        # Output is a directory for multiple files.
-        output.mkdir(parents=True, exist_ok=True)
-        for input_path in input_files:
-            output_path = output / (input_path.stem + ".md")
-            if process_single_file(input_path, output_path, converter, verbose):
-                success_count += 1
-            else:
-                error_count += 1
-    elif output and len(input_files) > 1:
+    if output and len(input_files) > 1:
         # Output is a directory for multiple files.
         output.mkdir(parents=True, exist_ok=True)
         for input_path in input_files:
@@ -213,8 +204,7 @@ def main(args: list[str] | None = None) -> int:
     else:
         # Single file or stdout.
         for input_path in input_files:
-            output_path = output if output else None
-            if process_single_file(input_path, output_path, converter, verbose):
+            if process_single_file(input_path, output, converter, verbose):
                 success_count += 1
             else:
                 error_count += 1
